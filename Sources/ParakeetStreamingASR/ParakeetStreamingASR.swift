@@ -152,37 +152,46 @@ public class ParakeetStreamingASRModel {
 
     public static func fromPretrained(
         modelId: String? = nil,
+        directory: URL? = nil,
         progressHandler: ((Double, String) -> Void)? = nil
     ) async throws -> ParakeetStreamingASRModel {
         let effectiveModelId = modelId ?? defaultModelId
         AudioLog.modelLoading.info("Loading Parakeet EOU model: \(effectiveModelId)")
 
         let cacheDir: URL
-        do {
-            cacheDir = try HuggingFaceDownloader.getCacheDirectory(for: effectiveModelId)
-        } catch {
-            throw AudioModelError.modelLoadFailed(
-                modelId: effectiveModelId, reason: "Failed to resolve cache directory", underlying: error)
-        }
-
-        progressHandler?(0.0, "Downloading model...")
-        do {
-            try await HuggingFaceDownloader.downloadWeights(
-                modelId: effectiveModelId,
-                to: cacheDir,
-                additionalFiles: [
-                    "encoder.mlmodelc/**",
-                    "decoder.mlmodelc/**",
-                    "joint.mlmodelc/**",
-                    "vocab.json",
-                    "config.json",
-                ]
-            ) { fraction in
-                progressHandler?(fraction * 0.7, "Downloading model...")
+        if let directory {
+            // Fully-local load: use the given folder directly. It must already
+            // contain config.json, vocab.json, and encoder/decoder/joint.mlmodelc.
+            // No HuggingFace cache resolution and no network snapshot — this is the
+            // offline / airgapped path (MyPal loads models from ~/Documents/models).
+            cacheDir = directory
+        } else {
+            do {
+                cacheDir = try HuggingFaceDownloader.getCacheDirectory(for: effectiveModelId)
+            } catch {
+                throw AudioModelError.modelLoadFailed(
+                    modelId: effectiveModelId, reason: "Failed to resolve cache directory", underlying: error)
             }
-        } catch {
-            throw AudioModelError.modelLoadFailed(
-                modelId: effectiveModelId, reason: "Download failed", underlying: error)
+
+            progressHandler?(0.0, "Downloading model...")
+            do {
+                try await HuggingFaceDownloader.downloadWeights(
+                    modelId: effectiveModelId,
+                    to: cacheDir,
+                    additionalFiles: [
+                        "encoder.mlmodelc/**",
+                        "decoder.mlmodelc/**",
+                        "joint.mlmodelc/**",
+                        "vocab.json",
+                        "config.json",
+                    ]
+                ) { fraction in
+                    progressHandler?(fraction * 0.7, "Downloading model...")
+                }
+            } catch {
+                throw AudioModelError.modelLoadFailed(
+                    modelId: effectiveModelId, reason: "Download failed", underlying: error)
+            }
         }
 
         progressHandler?(0.70, "Loading configuration...")
