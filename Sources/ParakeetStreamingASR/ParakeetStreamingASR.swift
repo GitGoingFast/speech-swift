@@ -152,51 +152,54 @@ public class ParakeetStreamingASRModel {
 
     public static func fromPretrained(
         modelId: String? = nil,
-        directory: URL? = nil,
+        cacheDir: URL? = nil,
+        offlineMode: Bool = false,
         progressHandler: ((Double, String) -> Void)? = nil
     ) async throws -> ParakeetStreamingASRModel {
         let effectiveModelId = modelId ?? defaultModelId
         AudioLog.modelLoading.info("Loading Parakeet EOU model: \(effectiveModelId)")
 
-        let cacheDir: URL
-        if let directory {
-            // Fully-local load: use the given folder directly. It must already
-            // contain config.json, vocab.json, and encoder/decoder/joint.mlmodelc.
-            // No HuggingFace cache resolution and no network snapshot — this is the
-            // offline / airgapped path (MyPal loads models from ~/Documents/models).
-            cacheDir = directory
-        } else {
-            do {
-                cacheDir = try HuggingFaceDownloader.getCacheDirectory(for: effectiveModelId)
-            } catch {
-                throw AudioModelError.modelLoadFailed(
-                    modelId: effectiveModelId, reason: "Failed to resolve cache directory", underlying: error)
-            }
+        // Step 1: resolve the model directory. A caller-supplied `cacheDir` is used
+        // as-is (MyPal points this at ~/Documents/models); otherwise the HF cache.
+        // Mirrors ParakeetASRModel.fromPretrained's cacheDir/offlineMode contract.
+        let resolvedCacheDir: URL
+        do {
+            resolvedCacheDir = try cacheDir ?? HuggingFaceDownloader.getCacheDirectory(for: effectiveModelId)
+        } catch {
+            throw AudioModelError.modelLoadFailed(
+                modelId: effectiveModelId, reason: "Failed to resolve cache directory", underlying: error)
+        }
 
-            progressHandler?(0.0, "Downloading model...")
-            do {
-                try await HuggingFaceDownloader.downloadWeights(
-                    modelId: effectiveModelId,
-                    to: cacheDir,
-                    additionalFiles: [
-                        "encoder.mlmodelc/**",
-                        "decoder.mlmodelc/**",
-                        "joint.mlmodelc/**",
-                        "vocab.json",
-                        "config.json",
-                    ]
-                ) { fraction in
-                    progressHandler?(fraction * 0.7, "Downloading model...")
-                }
-            } catch {
-                throw AudioModelError.modelLoadFailed(
-                    modelId: effectiveModelId, reason: "Download failed", underlying: error)
+        // Step 2: fetch weights. With `offlineMode` and the files already present,
+        // downloadWeights short-circuits with no network snapshot — the airgapped
+        // path. The progress line reports the resolved dir + mode so a local load is
+        // provable in the caller's logs (not just silently taken).
+        progressHandler?(0.0, offlineMode
+            ? "Loading locally from \(resolvedCacheDir.path) (offline, no download)"
+            : "Downloading model...")
+        do {
+            try await HuggingFaceDownloader.downloadWeights(
+                modelId: effectiveModelId,
+                to: resolvedCacheDir,
+                additionalFiles: [
+                    "encoder.mlmodelc/**",
+                    "decoder.mlmodelc/**",
+                    "joint.mlmodelc/**",
+                    "vocab.json",
+                    "config.json",
+                ],
+                offlineMode: offlineMode
+            ) { fraction in
+                progressHandler?(fraction * 0.7, "Downloading model...")
             }
+        } catch {
+            throw AudioModelError.modelLoadFailed(
+                modelId: effectiveModelId, reason: "Download failed", underlying: error)
         }
 
         progressHandler?(0.70, "Loading configuration...")
         let config: ParakeetEOUConfig
-        let configURL = cacheDir.appendingPathComponent("config.json")
+        let configURL = resolvedCacheDir.appendingPathComponent("config.json")
         if FileManager.default.fileExists(atPath: configURL.path) {
             let data = try Data(contentsOf: configURL)
             config = try JSONDecoder().decode(ParakeetEOUConfig.self, from: data)
@@ -205,15 +208,15 @@ public class ParakeetStreamingASRModel {
         }
 
         progressHandler?(0.75, "Loading vocabulary...")
-        let vocabURL = cacheDir.appendingPathComponent("vocab.json")
+        let vocabURL = resolvedCacheDir.appendingPathComponent("vocab.json")
         let vocabulary = try ParakeetEOUVocabulary.load(from: vocabURL)
 
         progressHandler?(0.80, "Loading CoreML models...")
-        let encoder = try loadCoreMLModel(name: "encoder", from: cacheDir, computeUnits: .cpuAndGPU)
+        let encoder = try loadCoreMLModel(name: "encoder", from: resolvedCacheDir, computeUnits: .cpuAndGPU)
         progressHandler?(0.90, "Loading decoder...")
-        let decoder = try loadCoreMLModel(name: "decoder", from: cacheDir, computeUnits: .cpuAndGPU)
+        let decoder = try loadCoreMLModel(name: "decoder", from: resolvedCacheDir, computeUnits: .cpuAndGPU)
         progressHandler?(0.95, "Loading joint network...")
-        let joint = try loadCoreMLModel(name: "joint", from: cacheDir, computeUnits: .cpuAndGPU)
+        let joint = try loadCoreMLModel(name: "joint", from: resolvedCacheDir, computeUnits: .cpuAndGPU)
 
         progressHandler?(1.0, "Model loaded")
         AudioLog.modelLoading.info("Parakeet EOU model loaded (\(vocabulary.count) tokens)")

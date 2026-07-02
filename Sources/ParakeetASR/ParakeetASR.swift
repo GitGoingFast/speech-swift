@@ -323,8 +323,12 @@ public class ParakeetASRModel {
                 modelId: effectiveModelId, reason: "Failed to resolve cache directory", underlying: error)
         }
 
-        // Step 2: Download model files (no preprocessor needed — mel is computed in Swift)
-        progressHandler?(0.0, "Downloading model...")
+        // Step 2: Download model files (no preprocessor needed — mel is computed in Swift).
+        // With offlineMode + files present this short-circuits (no network); the
+        // progress line reports the resolved dir + mode so a local load is provable.
+        progressHandler?(0.0, offlineMode
+            ? "Loading locally from \(resolvedCacheDir.path) (offline, no download)"
+            : "Downloading model...")
         do {
             try await HuggingFaceDownloader.downloadWeights(
                 modelId: effectiveModelId,
