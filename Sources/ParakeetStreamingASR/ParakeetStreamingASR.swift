@@ -212,11 +212,11 @@ public class ParakeetStreamingASRModel {
         let vocabulary = try ParakeetEOUVocabulary.load(from: vocabURL)
 
         progressHandler?(0.80, "Loading CoreML models...")
-        let encoder = try loadCoreMLModel(name: "encoder", from: resolvedCacheDir, computeUnits: .cpuAndGPU)
+        let encoder = try loadCoreMLModel(name: "encoder", from: resolvedCacheDir, computeUnits: .cpuOnly)
         progressHandler?(0.90, "Loading decoder...")
-        let decoder = try loadCoreMLModel(name: "decoder", from: resolvedCacheDir, computeUnits: .cpuAndGPU)
+        let decoder = try loadCoreMLModel(name: "decoder", from: resolvedCacheDir, computeUnits: .cpuOnly)
         progressHandler?(0.95, "Loading joint network...")
-        let joint = try loadCoreMLModel(name: "joint", from: resolvedCacheDir, computeUnits: .cpuAndGPU)
+        let joint = try loadCoreMLModel(name: "joint", from: resolvedCacheDir, computeUnits: .cpuOnly)
 
         progressHandler?(1.0, "Model loaded")
         AudioLog.modelLoading.info("Parakeet EOU model loaded (\(vocabulary.count) tokens)")
