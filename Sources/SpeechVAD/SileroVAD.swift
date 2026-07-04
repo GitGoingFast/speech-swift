@@ -280,7 +280,7 @@ public final class SileroVADModel {
             }
 
             let mlConfig = MLModelConfiguration()
-            mlConfig.computeUnits = CoreMLComputeUnitsResolver.resolved(default: .cpuAndNeuralEngine)
+            mlConfig.computeUnits = CoreMLComputeUnitsResolver.resolved(default: .cpuOnly)
 
             let model: MLModel
             do {
