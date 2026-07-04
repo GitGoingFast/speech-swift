@@ -148,7 +148,11 @@ public final class WeSpeakerModel {
             }
 
             let mlConfig = MLModelConfiguration()
-            mlConfig.computeUnits = CoreMLComputeUnitsResolver.resolved(default: .cpuAndNeuralEngine)
+            // Default to .cpuOnly to avoid E5RT ANE compilation failures that leave
+            // the model in a state where it produces non-discriminative embeddings.
+            // The SPEECH_COREML_COMPUTE_UNITS env var still overrides this.
+            // The AudioIODaemon context reserves GPU/ANE for the engine daemons.
+            mlConfig.computeUnits = CoreMLComputeUnitsResolver.resolved(default: .cpuOnly)
 
             let model: MLModel
             do {
